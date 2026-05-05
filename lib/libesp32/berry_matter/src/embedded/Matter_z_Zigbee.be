@@ -38,8 +38,11 @@ class Matter_Zigbee_Mapper
   var device_arg                                    # contains the device shortaddr (int) or device name (str) as per configuration JSON
                                                     # we need to store it, because the zigbee subsystem is not initialized when Matter starts
                                                     # hence lookup needs to be postponed
+  var device_arg_str                                # original config string preserved verbatim, so ZbSend can auto-resolve
+                                                    # per-endpoint friendly names (e.g. "SaM_Plafond" -> EP2). nil if config was an integer.
   var zigbee_device                                 # zigbee device
   var shortaddr                                     # shortaddr to facilitatefiltering
+  var endpoint                                      # zigbee endpoint when device_arg_str is a per-endpoint friendly name; nil = no filter (any endpoint)
 
   def init(pi)
     self.pi = pi
@@ -53,6 +56,10 @@ class Matter_Zigbee_Mapper
     import zigbee
     import string
     self.device_arg = config.find('zigbee_device', nil)
+    # preserve original string form so ZbSend can auto-resolve per-endpoint friendly names
+    if (type(self.device_arg) == 'string')
+      self.device_arg_str = self.device_arg
+    end
     # we accept hex integers
     if (type(self.device_arg) == 'string')
       if string.startswith(self.device_arg, "0x") || string.startswith(self.device_arg, "0X")
@@ -105,17 +112,53 @@ class Matter_Zigbee_Mapper
   # return true if found, false if not found or zigbee not started
   def resolve_zb_device()
     import zigbee
+    import string
     if (self.device_arg == nil)   return false    end
     if (self.shortaddr != nil)    return true     end
 
     self.zigbee_device = zigbee.find(self.device_arg)
     if self.zigbee_device
       self.shortaddr = self.zigbee_device.shortaddr
+      # auto-derive endpoint from per-endpoint friendly name (one-shot, lazy).
+      # device-level names and "0x..." inputs leave endpoint == nil (any-endpoint behavior)
+      if (self.endpoint == nil) && (type(self.device_arg_str) == 'string') &&
+         !string.startswith(self.device_arg_str, "0x") && !string.startswith(self.device_arg_str, "0X")
+        self.endpoint = self._lookup_endpoint_by_name(self.device_arg_str)
+      end
       return true
     else
       log(f"MTR: cannot find zigbee device '{self.device_arg}'", 3)
       return false
     end
+  end
+
+  #############################################################
+  # _lookup_endpoint_by_name
+  #
+  # Query `ZbName <name>` and find which endpoint the given per-endpoint
+  # friendly name belongs to. Returns nil for device-level names or if not found.
+  # ZbName response format (Tasmota >= 15.x):
+  #   {"0xBE4B":{"Name":"Nodon_1","Names":{"1":"SaM_Appliques","2":"SaM_Plafond"}}}
+  # Older format (no "Names" wrapper) is also handled by the recursive walk.
+  def _lookup_endpoint_by_name(name)
+    var resp = tasmota.cmd(f'ZbName {name}', true)
+    return self._search_for_ep(resp, name)
+  end
+
+  # Recursively walk a map and return the integer key whose value equals `name`.
+  # Filters non-numeric keys (e.g. "Name") via `int(k) > 0`.
+  def _search_for_ep(node, name)
+    if !isinstance(node, map)   return nil   end
+    for k: node.keys()
+      var v = node[k]
+      if (v == name)
+        var ep = int(k)
+        if (ep > 0)   return ep   end
+      end
+      var found = self._search_for_ep(v, name)
+      if (found != nil)   return found   end
+    end
+    return nil
   end
 
   #############################################################
@@ -125,12 +168,16 @@ class Matter_Zigbee_Mapper
   def zb_single_command(key, value)
     # to ease caller, we accept nil arguments and do nothing
     var cmd
+    # use original config string as Device when available; ZbSend's parser
+    # resolves per-endpoint friendly names to the correct endpoint automatically.
+    # falls back to hex shortaddr when config was an int.
+    var dev = (type(self.device_arg_str) == 'string') ? self.device_arg_str : f'0x{self.shortaddr:04X}'
     if   (key == 'Power')
-      cmd = f'ZbSend {{"Device":"0x{self.shortaddr:04X}","Send":{{"Power":{value:i}}}}}'
+      cmd = f'ZbSend {{"Device":"{dev}","Send":{{"Power":{value:i}}}}}'
     elif (key == 'Bri')
-      cmd = f'ZbSend {{"Device":"0x{self.shortaddr:04X}","Send":{{"Dimmer":{value:i}}}}}'
+      cmd = f'ZbSend {{"Device":"{dev}","Send":{{"Dimmer":{value:i}}}}}'
     elif (key == 'CT')
-      cmd = f'ZbSend {{"Device":"0x{self.shortaddr:04X}","Send":{{"CT":{value:i}}}}}'
+      cmd = f'ZbSend {{"Device":"{dev}","Send":{{"CT":{value:i}}}}}'
     end
     # send command
     if (cmd != nil)
@@ -177,7 +224,14 @@ class Matter_Zigbee
       if (pi.ZIGBEE && pi.zigbee_mapper)          # first test always works, while second works only if `zigbee` arrtibute exists
         if (pi.zigbee_mapper.resolve_zb_device())    # resolve if this wan't done before
           if (pi.zigbee_mapper.shortaddr == shortaddr)
-            pi.zigbee_received(frame, attr_list)
+            # endpoint filter: when the mapper has a known endpoint (per-endpoint friendly name),
+            # only deliver events whose source endpoint matches. nil endpoint = legacy any-endpoint behavior.
+            # Note: `frame` is always nil here (caller passes nullptr); use attr_list._src_ep instead.
+            var ep = pi.zigbee_mapper.endpoint
+            var src_ep = (attr_list != nil) ? attr_list._src_ep : nil
+            if (ep == nil) || (src_ep == nil) || (src_ep == 0) || (ep == src_ep)
+              pi.zigbee_received(frame, attr_list)
+            end
           end
         end
       end
