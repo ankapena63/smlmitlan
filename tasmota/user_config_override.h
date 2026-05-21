@@ -11,4 +11,3 @@
 #define FRIENDLY_NAME "SML-WT32"
 
 #endif
-``
