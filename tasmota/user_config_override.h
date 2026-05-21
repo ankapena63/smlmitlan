@@ -1,12 +1,10 @@
 #ifndef USER_CONFIG_OVERRIDE_H
 #define USER_CONFIG_OVERRIDE_H
 
-#define WIFI_SSID "DEIN_WLAN"
-#define WIFI_PASS "DEIN_PASS"
+#define FRIENDLY_NAME "SML-WT32"
 
-#define FRIENDLY_NAME "smlmitlan"
+#define MQTT_HOST "192.168.1.10"
 
 #define USE_SML_M
 
 #endif
-``
