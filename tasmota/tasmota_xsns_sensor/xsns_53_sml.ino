@@ -20,7 +20,7 @@
   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
-
+#if 0
 #ifdef USE_SML_M
 
 // ❗ alter SML komplett deaktivieren
@@ -4987,4 +4987,5 @@ bool Xsns53(uint32_t function) {
 
 #endif  // end block
 #endif  // USE_SML_M
+#endif
 
