@@ -1,0 +1,25 @@
+name: My Tasmota Build
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - uses: actions/setup-python@v4
+      with:
+        python-version: "3.x"
+
+    - run: pip install platformio
+
+    - run: pio run -e tasmota32
+
+    - uses: actions/upload-artifact@v3
+      with:
+        name: firmware
+        path: .pio/build/tasmota32/firmware.bin
