@@ -4984,3 +4984,7 @@ bool Xsns53(uint32_t function) {
 }
 
 #endif  // USE_SML
+
+#endif  // end block
+#endif  // USE_SML_M
+
