@@ -23,9 +23,13 @@
 
 #ifdef USE_SML_M
 
-#define XSNS_53 53
+// ❗ alter SML komplett deaktivieren
+#undef USE_SML
 
-// this driver depends on use USE_SCRIPT !!!
+// ❗ Datei komplett blockieren (wichtig!)
+#if 0
+
+#define XSNS_53 53
 
 
 // debug counter input to led for counter1 and 2
